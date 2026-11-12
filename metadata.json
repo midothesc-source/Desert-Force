@@ -1,0 +1,6 @@
+{
+  "name": "Desert Force",
+  "description": "Next-generation tactical real-time messaging, dynamic multilingual communication, AI command assistant, and humanitarian advocacy hub.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

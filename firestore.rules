@@ -1,0 +1,167 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1: Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Entity 1: TacticalMessage Validation Blueprint
+    function isValidTacticalMessage(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.channelId is string && data.channelId.size() >= 1 && data.channelId.size() <= 64 &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80 &&
+             data.senderRole is string && data.senderRole.size() >= 1 && data.senderRole.size() <= 80 &&
+             data.content is string && data.content.size() >= 1 && data.content.size() <= 4000 &&
+             data.languageCode is string && data.languageCode.size() >= 2 && data.languageCode.size() <= 16 &&
+             data.isAiGenerated is bool &&
+             data.priority in ['STANDARD', 'HIGH', 'FLASH'] &&
+             (!('translatedContent' in data) || data.translatedContent == null || (data.translatedContent is string && data.translatedContent.size() <= 4000)) &&
+             (!('translatedLang' in data) || data.translatedLang == null || (data.translatedLang is string && data.translatedLang.size() <= 16)) &&
+             (!('attachmentTitle' in data) || data.attachmentTitle == null || (data.attachmentTitle is string && data.attachmentTitle.size() <= 200)) &&
+             (!('attachmentType' in data) || data.attachmentType == null || (data.attachmentType is string && data.attachmentType.size() <= 32)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /messages/{messageId} {
+      allow get: if isSignedIn() && isValidId(messageId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(messageId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'channelId', 'senderName', 'senderRole',
+                         'content', 'languageCode', 'isAiGenerated', 'priority',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'channelId', 'senderName', 'senderRole',
+                         'content', 'languageCode', 'isAiGenerated', 'priority',
+                         'translatedContent', 'translatedLang', 'attachmentTitle', 'attachmentType',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidTacticalMessage(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(messageId) &&
+                       isValidTacticalMessage(incoming()) &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().channelId == existing().channelId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'content', 'priority', 'translatedContent', 'translatedLang', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(messageId) && existing().userId == request.auth.uid;
+    }
+
+    // Entity 2: IntelDocument Validation Blueprint
+    function isValidIntelDocument(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+             data.category in ['EDUCATION', 'HUMANITARIAN', 'PROTOCOL', 'MEDIA'] &&
+             data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 4000 &&
+             data.fileFormat in ['PDF', 'AUDIO', 'VIDEO', 'BRIEF'] &&
+             data.readTimeMinutes is int && data.readTimeMinutes >= 1 && data.readTimeMinutes <= 240 &&
+             data.bookmarked is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /intel_docs/{docId} {
+      allow get: if isSignedIn() && isValidId(docId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(docId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'title', 'category', 'summary',
+                         'fileFormat', 'readTimeMinutes', 'bookmarked',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'title', 'category', 'summary',
+                         'fileFormat', 'readTimeMinutes', 'bookmarked',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidIntelDocument(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(docId) &&
+                       isValidIntelDocument(incoming()) &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'title', 'summary', 'bookmarked', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(docId) && existing().userId == request.auth.uid;
+    }
+
+    // Entity 3: AdvocacyCampaign Validation Blueprint
+    function isValidAdvocacyCampaign(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+             data.region is string && data.region.size() >= 1 && data.region.size() <= 100 &&
+             data.causeCategory in ['WATER_SECURITY', 'MEDICAL_RELIEF', 'EDUCATION_ACCESS', 'CLIMATE_RESILIENCE'] &&
+             data.impactSummary is string && data.impactSummary.size() >= 1 && data.impactSummary.size() <= 4000 &&
+             data.supportersCount is int && data.supportersCount >= 0 && data.supportersCount <= 100000000 &&
+             data.pledgedSupport is bool &&
+             data.urgencyLevel in ['CRITICAL', 'ACTIVE', 'SUSTAINED'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /advocacy_campaigns/{campaignId} {
+      allow get: if isSignedIn() && isValidId(campaignId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(campaignId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'title', 'region', 'causeCategory',
+                         'impactSummary', 'supportersCount', 'pledgedSupport',
+                         'urgencyLevel', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'title', 'region', 'causeCategory',
+                         'impactSummary', 'supportersCount', 'pledgedSupport',
+                         'urgencyLevel', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidAdvocacyCampaign(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(campaignId) &&
+                       isValidAdvocacyCampaign(incoming()) &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'supportersCount', 'pledgedSupport', 'impactSummary', 'urgencyLevel', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(campaignId) && existing().userId == request.auth.uid;
+    }
+  }
+}
